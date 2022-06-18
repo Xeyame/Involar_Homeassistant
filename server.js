@@ -1,194 +1,225 @@
+var log = require('npmlog')
 var net = require('net');
 var fs = require('fs');
 const moment = require('moment');
 let m = moment();
 var request = require('request');
-var config = require('./config');
+var mqtt=require('mqtt');
 
-/////////////////////////////////////////
-// you dont want to change this
-var LocalPorts = ['1020', '9800']; // local ports to listen on
-var AvgWhArr = [];
-var AvgWh = '0';
+const mqttlogin = {url: 'mqtt://10.1.2.3', username: 'mqttuser', password: 'mqttpass'};
+
+log.addLevel('debug',     1, {fg: 'white'}, "[DEBUG]     ");
+log.addLevel('verbose',      3, { fg: 'green'  }, "[VERBOSE] ");
+log.addLevel('info',    5, { fg: 'blue' }, "[INFO]   ");
+log.addLevel('error',     7, { fg: 'red'    }, "[ERROR]  ");
+
+log.level = 'verbose';
+
 
 var server = net.createServer(function(socket) {
 
 	socket.setKeepAlive(true);
-	var serverprop = socket.address();
 
-
-
-	var id = socket.remoteAddress + ':' + socket.remotePort;
-	console.log('Server '+ serverprop.port +': A new connection was made from the Egate:', id);
+	log.verbose('[TCP]', 'New incoming connection', `${socket.remoteAddress}:${socket.remotePort}`);
 
 	socket.on('data', function(data){
-		console.log('Server '+ serverprop.port +': incoming data');
-		//textChunk = data.toString('utf8');
+        var cdate = new Date().toISOString();
+        log.debug('[DATA]', `${cdate} | Incoming data (hex): ` + data.toString('hex'));
 
-		if(config.Involar.Relay) {
+        log.verbose('[DATA]', 'Received data length:' + data.length + "  ->   Parsing..."); 
 
-			var client = new net.Socket();
-			client.connect(1020, config.Involar.Server, function() {
-				if(client) {
-					console.log('Involar: Connected to server');
-					client.write(data);
-					client.destroy();
-					console.log('Involar: data sent');
-				}
-			});
+		if(data.length==32) {
 
-			client.on('close', function() {
-				console.log('Involar: Connection closed');
-			});
+            var hex = data.toString('hex');
+            var hexMsgType = hex.substring(4, 6);
 
-		}
+            if(hexMsgType=='e7') {
+
+                const newLocal = 'ffffa77000000000000000000000000000000000000000000000000000000000';
+                socket.write(Buffer.from(newLocal, 'hex'));  //reply msg recieved OK
+
+                var egateuid = hex.substring(20, 28);
+
+                if (!global.egatesregistered.includes(egateuid)) {
+                    log.info('[HADR]', `Adding eGate with UID ${egateuid} sensors to HomeAssistant Device Registery...`);
+
+                    var mqttmsgtopic = `homeassistant/sensor/involar-${egateuid}/config`;
+                    var mqttmsg = `{"name":"Involar eGate message sequence","availability":[{"topic":"homeassistant/sensor/involar-${egateuid}/availability"}],` +
+                                  `"state_topic":"homeassistant/sensor/involar-${egateuid}-messagesequence/state", "unique_id": "involar-${egateuid}-messagesequence",` +
+                                  `"device":{"identifiers":["${egateuid}"],"name":"Involar eGate ${egateuid}", "manufacturer":"Involar","model":"eGate"}}`;
+                    client.publish(mqttmsgtopic, mqttmsg, {retain: true});
+                    log.debug('[MQTT]', `SENT [${mqttmsgtopic}] ${mqttmsg}`);
+
+                    global.egatesregistered.push(egateuid);
+
+                    var mqttmsgtopic = `homeassistant/sensor/involar-${egateuid}/availability`;
+                    var mqttmsg = 'online';
+                    client.publish(mqttmsgtopic, mqttmsg, {retain: true});
+                    log.debug('[MQTT]', `SENT [${mqttmsgtopic}] ${mqttmsg}`);
+
+                    var mqttmsgtopic = `homeassistant/sensor/involar-${egateuid}-power/config`;
+                    var mqttmsg = `{"name":"Involar eGate power","availability":[{"topic":"homeassistant/sensor/involar-${egateuid}/availability"}],` +
+                                  `"state_topic":"homeassistant/sensor/involar-${egateuid}-power/state", "unique_id": "involar-${egateuid}-power",` +
+                                  `"state_class": "measurement", "device_class": "power", "unit_of_measurement": "W","device":{"identifiers":["${egateuid}"]}}`;
+                    client.publish(mqttmsgtopic, mqttmsg, {retain: true});
+                    log.debug('[MQTT]', `SENT [${mqttmsgtopic}] ${mqttmsg}`);
+
+                    var mqttmsgtopic = `homeassistant/sensor/involar-${egateuid}-energy/config`;
+                    var mqttmsg = `{"name":"Involar eGate energy","availability":[{"topic":"homeassistant/sensor/involar-${egateuid}/availability"}],` +
+                                  `"state_topic":"homeassistant/sensor/involar-${egateuid}-energy/state", "unique_id": "involar-${egateuid}-energy",` +
+                                  `"state_class": "total_increasing", "device_class": "energy", "unit_of_measurement": "Wh","device":{"identifiers":["${egateuid}"]}}`;
+                    client.publish(mqttmsgtopic, mqttmsg, {retain: true});
+                    log.debug('[MQTT]', `SENT [${mqttmsgtopic}] ${mqttmsg}`);
+
+                }
+
+                var hexseq = hex.substring(28, 32); 
+                var intseq = parseInt(hexseq, 16);
+                log.verbose('[DATA - e7]', `[${egateuid}] eGate Msg Sequence: ${intseq}     (${hexseq})`); 
+                var mqttmsgtopic = `homeassistant/sensor/involar-${egateuid}-messagesequence/state`; var mqttmsg = intseq.toString();
+                client.publish(mqttmsgtopic, mqttmsg);
+                log.debug('[MQTT]', `SENT [${mqttmsgtopic}] ${mqttmsg}`);
+
+                var hexw = hex.substring(48, 52); 
+                var intw = parseInt(hexw, 16)/4;
+                log.verbose('[DATA - e7]', `[${egateuid}] eGate measured power (W): ${intw}     (${hexw})`); 
+                var mqttmsgtopic = `homeassistant/sensor/involar-${egateuid}-power/state`; var mqttmsg = intw.toString();
+                client.publish(mqttmsgtopic, mqttmsg);
+                log.debug('[MQTT]', `SENT [${mqttmsgtopic}] ${mqttmsg}`);
+
+                var hexwh = hex.substring(52, 60);
+                var intwh = parseInt(hexwh, 16);
+                log.verbose('[DATA - e7]', `[${egateuid}] eGate measured energy (Wh): ${intwh}     (${hexwh})`); 
+                var mqttmsgtopic = `homeassistant/sensor/involar-${egateuid}-energy/state`; var mqttmsg = intwh.toString();
+                client.publish(mqttmsgtopic, mqttmsg);
+                log.debug('[MQTT]', `SENT [${mqttmsgtopic}] ${mqttmsg}`);
+
+            } else if (hexMsgType=='e1') {
+                var egateuid = hex.substring(8, 16);
+                log.info('[DATA - e1]', `[${egateuid}] eGate startup message recieved`);
+            } else {
+                log.error('[DATA - ??]', `EXCEPTION: Unknown message type ${hexMsgType} recieved.`);
+            }
+  		} else if (data.length==544) {
+            var hex = data.toString('hex');
+
+            var egateuid = hex.substring(0, 8);
+
+            if (global.egatesregistered.includes(egateuid)) {
+
+                var hexseq = hex.substring(28, 32); 
+                var intseq = parseInt(hexseq, 16);
+
+                //split long data into array with parts of 64
+                hexparts = [];
+                do {
+                    hexparts.push(hex.substring(0, 64));
+                } while( (hex = hex.substring(64, hex.length)) != "" );
+
+                hexparts.forEach(function(hexpart) {
+                    log.debug('[DATA]', `[${egateuid}] Processing line: ${hexpart}`); 
+
+                    var hexPartMsgType = hexpart.substring(0, 8);
+                    log.debug('[DATA]', `[${egateuid}] Line Message type: ${hexPartMsgType}`); 
+                    
+                    if (hexPartMsgType == "ffff1a07") {
+                        // data not known. Maybe includes microinverter serial?
+                        var microinverterid = hexpart.substring(28, 32);
+                        log.debug('[DATA]', `[${egateuid}-${microinverterid}] Recieved info type message. Discarding.`); 
+                    } else if (hexPartMsgType == "ffff1a0e") {
+                        // acutal data
+                        var microinverterid = hexpart.substring(60, 64);
+
+                        var microinvertername = egateuid + "-" + microinverterid;
+                        if (!global.minvsregistered.includes(microinvertername)) { //check if MicroInverter is registered
+                            // else add to homeassistant
+
+                            log.info('[HADR]', `Adding microinverter with ID ${microinverterid} to HASS device eGate ${egateuid}...`);
+
+                            var mqttmsgtopic = `homeassistant/sensor/involar-${microinvertername}-energy/config`;
+                            var mqttmsg = `{"name":"Involar MicroInverter ${microinverterid} energy","availability":[{"topic":"homeassistant/sensor/involar-${egateuid}/availability"}],` +
+                                          `"state_topic":"homeassistant/sensor/involar-${microinvertername}-energy/state", "unique_id": "involar-${microinvertername}-energy",` +
+                                          `"state_class": "total_increasing", "device_class": "energy", "unit_of_measurement": "Wh","device":{"identifiers":["${egateuid}"]}}`;
+                            client.publish(mqttmsgtopic, mqttmsg, {retain: true});
+                            log.debug('[MQTT]', `SENT [${mqttmsgtopic}] ${mqttmsg}`);
+
+                            global.minvsregistered.push(microinvertername);
+                        }
+
+                        var hexwh = hexpart.substring(36, 40);
+                        var intwh = (parseInt(hexwh, 16)/8192)*1000;
+                        var intwh = Math.round(intwh * 10) / 10;
+
+                        log.verbose('[DATA - 0e]', `[${microinvertername}] MicroInverter measured energy (Wh): ${intwh}    (${hexwh})`); 
+                        var mqttmsgtopic = `homeassistant/sensor/involar-${microinvertername}-energy/state`; var mqttmsg = intwh.toString();
+                        client.publish(mqttmsgtopic, mqttmsg);
+                        log.debug('[MQTT]', `SENT [${mqttmsgtopic}] ${mqttmsg}`);
+
+                    } else if (hexpart == 0) {
+                        log.debug('[DATA]', "Detected line empty");
+                    } else if (hexpart.substring(0, 8) == egateuid && hexpart.substring(8, hexpart.lenght) == 0) {   //check if line is egate UID, else raise exception
+                        log.debug('[DATA]', `Detected line egate UID`); 
+                    } else {
+                        log.error('[DATA]', "EXCEPTION: Invalid microinverter message part type recieved.");
+                    }
+                });
 
 
-		if(data.length>32) {
+            } else {
+                log.error('[DATA]', `EXCEPTION: Recieved microinverter data from unknown eGate. (UID ${egateuid})`);
+            }
+        } else {
+            log.error('[DATA]', "EXCEPTION: Unknown data length recieved");
 
-       		//console.log('received data length :' + data.length ); 
-        	console.log('Micro Inverter detailed stats line'); 
-
-        	var s = data.toString('hex');
-			var a = [];
-
-			do { a.push(s.substring(0, 64)) } 
-			while( (s = s.substring(64, s.length)) != "" );
-
-			a.forEach(function(item, index, array) {
-
-				var linecheck = item.substr(0,4);
-				var serial = item.substr(60,4);
-				var today = item.substr(36,4);
-				var inttoday = (parseInt(today, 16)/8194.968553459119)*1000;
-
-				if(linecheck=='ffff') {
-					console.log(serial +':'+ inttoday);
-					if(serial>0 && inttoday) {
-
-						var sid = config.PvOutput.MicroInverterMapping[serial];
-
-						if(sid) {
-
-							if(config.PvOutput.MicroInverterMode) {
-
-								request('https://pvoutput.org/service/r2/addstatus.jsp?sid='+ sid +'&key='+ config.PvOutput.Key +'&v1='+ inttoday 
-								+'&t='+ moment().format('HH:mm')
-								+'&d='+ moment().format('YYYYMMDD'), function (error, response, body) {
-								  console.log('Micro inverter PV Output for serial ('+ serial +')', body); 
-								});
-
-							} 
-
-						} else {
-
-							console.log('No mapping set for serial: '+ serial +', please set one up in variable: PvOutpputMicroInverterMapping');
-						}
-
-					}
-				}
-			});
-
-
-  			fs.appendFile('log'+ serverprop.port +'-big.txt', new Date().toLocaleString('en-US', { timeZone: 'Europe/Amsterdam'}) +"	"+data.toString('hex') +"\r\n\r\n", function (err) {
-    			if (err) 
-        			return console.log(err);
-			});
-
-  		} else {
-
-       		//console.log('received data length :' + data.length ); 
-
-       		var hex = data.toString('hex');
-       		var hexMsgType = hex.substr(4, 2); 
-
-       		if(hexMsgType=='e7') {
-
-       			socket.write(Buffer.from('ffffa77000000000000000000000000000000000000000000000000000000000', 'hex'));
-
-       			var hexKwh = hex.substr(48, 4); 
-       			var intKwh = parseInt(hexKwh, 16)/4;
-        		console.log(hex + ' / '+ intKwh); 
-
-				var valueToPush = { };
-				valueToPush["stamp"] = moment().unix();
-				valueToPush["watt"] = intKwh;
-
-				AvgWhArr.push(valueToPush);
-
-				AvgWhArr.forEach(function(item, index, array) {
-
-					now = moment().unix();
-					diff = now-item.stamp;
-					console.log(index +' '+ diff);
-					if(diff>2 * 60) {
-						AvgWhArr.splice(index, 1);
-					} 			  	
-				  	
-				});
-
-				console.log(AvgWhArr);
-
-				AvgWh = 0;
-				AvgWhcount = 0;
-				AvgWhArr.forEach(function(item, index, array) {
-					AvgWh = AvgWh+item.watt;
-					AvgWhcount++;
-				});
-
-				console.log(AvgWh +'/'+AvgWhcount);
-
-				if(AvgWh>0) {
-					var NewWh = AvgWh/AvgWhcount;
-				} else {
-					var NewWh = 0;
-				}
-				console.log(NewWh);
-
-				request('https://pvoutput.org/service/r2/addstatus.jsp?sid='+ config.PvOutput.Sid 
-				+'&key='+ config.PvOutput.Key 
-				+'&v2='+ NewWh 
-				+'&t='+ moment().format('HH:mm')
-				+'&d='+ moment().format('YYYYMMDD'), function (error, response, body) {
-				  //console.log('error:', error); // Print the error if one occurred
-				  //console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
-				  console.log('PV Output:', body);
-				});
-
-			} else if(hexMsgType=='e1') {
-				// e1 is only serial number of the Egate
-
-			} else if(hexMsgType=='e9') {
-				// e1 is only serial number of the Egate
-
-			} else {
-
-				console.log('Unimplemented message type'); 
-				console.log(hex); 
-
-			}
-
-  			fs.appendFile('log'+ serverprop.port +'-small.txt', new Date().toLocaleString('en-US', { timeZone: 'Europe/Amsterdam'}) +"	"+data.toString('hex') +' Watt: '+ intKwh +"\r\n", function (err) {
-    			if (err) 
-        			return console.log(err);
-			});
-
-  		}
+        }
+        
+        log.debug('[DATA]', "=======   Data processing end   ======");
 
 	});
 
 	socket.on('close', function(data){
-		console.log('Server '+ serverprop.port +': Connection closed with Egate');
+		log.verbose('[TCP]', "Connection closed");
 	});
 
 
 });
 
-LocalPorts.forEach(function(item, index, array) {
+log.info('[TCP ]', 'Starting server on port 1020');
+server.listen('1020');
 
-	console.log('Starting server on port '+ item);
-
-	server.listen(item, config.local.ip);
-
+log.info('[MQTT]', `Connecting to MQTT server ${mqttlogin.url}...`);
+var client = mqtt.connect(mqttlogin.url,{username:mqttlogin.username,password:mqttlogin.password})
+client.on("connect",function(){	
+    log.info('[MQTT]', `Connected`);
+    global.egatesregistered = [];
+    global.minvsregistered = [];
+    log.info('[HADR]', 'Waiting for first connection from eGate...');
 });
 
+
+
+
+
+function handleAppExit (options, err) {
+if (err) {
+    console.log(err.stack)
+}
+
+if (options.cleanup) {
+    global.egatesregistered.forEach(element => {
+        var mqttmsgtopic = `homeassistant/sensor/involar-${element}/availability`;
+        var mqttmsg = 'offline';
+        client.publish(mqttmsgtopic, mqttmsg, {retain: true});
+        log.debug('[MQTT]', `SENT [${mqttmsgtopic}] ${mqttmsg}`);    
+    });
+}
+
+if (options.exit) {
+    process.exit()
+}
+}
+
+process.on('SIGINT', handleAppExit.bind(null, {
+    exit: true,
+    cleanup: true
+  }))
