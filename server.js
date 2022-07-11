@@ -184,7 +184,7 @@ var server = net.createServer(function(socket) {
 
 });
 
-log.info('[TCP ]', 'Starting server on port 1020');
+log.info('[TCP ]', `Starting server on port ${process.env.port}`);
 server.listen(process.env.port);
 
 log.info('[MQTT]', `Connecting to MQTT server ${mqttlogin.url}...`);
