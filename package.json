@@ -1,0 +1,26 @@
+{
+  "name": "involar_homeassistant",
+  "version": "1.0.0",
+  "description": "This nodejs script sends your involar eGate data to home assistant.",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Xeyame/Involar_Homeassistant.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Xeyame/Involar_Homeassistant/issues"
+  },
+  "homepage": "https://github.com/Xeyame/Involar_Homeassistant#readme",
+  "dependencies": {
+    "moment": "^2.29.4",
+    "mqtt": "^4.3.7",
+    "npmlog": "^6.0.2",
+    "request": "^2.88.2"
+  }
+}
