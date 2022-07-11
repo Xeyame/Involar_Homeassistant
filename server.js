@@ -6,14 +6,14 @@ let m = moment();
 var request = require('request');
 var mqtt=require('mqtt');
 
-const mqttlogin = {url: 'mqtt://10.1.2.3', username: 'mqttuser', password: 'mqttpass'};
+const mqttlogin = {url: process.env.mqtturl, username: process.env.mqttuser, password: process.env.mqttpass};
 
 log.addLevel('debug',     1, {fg: 'white'}, "[DEBUG]     ");
 log.addLevel('verbose',      3, { fg: 'green'  }, "[VERBOSE] ");
 log.addLevel('info',    5, { fg: 'blue' }, "[INFO]   ");
 log.addLevel('error',     7, { fg: 'red'    }, "[ERROR]  ");
 
-log.level = 'verbose';
+log.level = 'info';
 
 
 var server = net.createServer(function(socket) {
@@ -185,7 +185,7 @@ var server = net.createServer(function(socket) {
 });
 
 log.info('[TCP ]', 'Starting server on port 1020');
-server.listen('1020');
+server.listen(process.env.port);
 
 log.info('[MQTT]', `Connecting to MQTT server ${mqttlogin.url}...`);
 var client = mqtt.connect(mqttlogin.url,{username:mqttlogin.username,password:mqttlogin.password})
