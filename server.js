@@ -13,7 +13,7 @@ log.addLevel('verbose',      3, { fg: 'green'  }, "[VERBOSE] ");
 log.addLevel('info',    5, { fg: 'blue' }, "[INFO]   ");
 log.addLevel('error',     7, { fg: 'red'    }, "[ERROR]  ");
 
-log.level = 'info';
+log.level = process.env.loglevel;
 
 
 var server = net.createServer(function(socket) {
