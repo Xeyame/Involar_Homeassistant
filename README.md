@@ -3,14 +3,14 @@
 This nodejs script sends your involar eGate data to home assistant.
 
 ## Starting the script
-The most simple way is to connect to a Home Assistant Installation.
+The most simple way is to connect to a Home Assistant Installation and run the script using docker.
 1. Install the Mosquitto broke Add-on and configure Integration.
 2. Add an user in the add-on's config options.
-3. Change the settings at the top of `server.js` to your HaOS IP and mqtt username/password
-4. In the directory of the script, run: `npm install npmlog moment request` (make sure nodejs is installed)
-5. Start script with: `node server.js`
-6. My eGate uses port 1020. If nothing is recieved, try changing `server.listen('1020');` to `server.listen('9800');`
-7. It's recommended to change log.level to info or error (at top of file). If everything works of course.
+3. Start the docker container of the script using the following run command (or equivalent in docker-compose)  
+`docker run -d -e 'mqtturl'='mqtt://192.168.1.6' -e 'mqttuser'='myuser' -e 'mqttpass'='mypass' -p '1020:1020/tcp' 'xeyame/involar_homeassistant'`
+6. My eGate uses port 1020. If nothing is recieved, try changing `1020:1020/tcp` to `9800:1020/tcp`
+
+See docker hub for container info: https://hub.docker.com/r/xeyame/involar_homeassistant
 
 ## Redirecting the eGate to your server
 Luckily the eGate is a quite simple device, with not much security.
