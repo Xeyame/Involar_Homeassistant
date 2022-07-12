@@ -7,7 +7,7 @@ The most simple way is to connect to a Home Assistant Installation and run the s
 1. Install the Mosquitto broke Add-on and configure Integration.
 2. Add an user in the add-on's config options.
 3. Start the docker container of the script using the following run command (or equivalent in docker-compose)  
-`docker run -d -e 'mqtturl'='mqtt://192.168.1.6' -e 'mqttuser'='myuser' -e 'mqttpass'='mypass' -p '1020:1020/tcp' 'xeyame/involar_homeassistant'`
+`docker run -d -e 'mqtturl'='mqtt://192.168.1.6' -e 'mqttuser'='myuser' -e 'mqttpass'='mypass' -p '1020:1020/tcp' --restart unless-stopped 'xeyame/involar_homeassistant'`
 6. My eGate uses port 1020. If nothing is recieved, try changing `1020:1020/tcp` to `9800:1020/tcp`
 
 See docker hub for container info: https://hub.docker.com/r/xeyame/involar_homeassistant
@@ -27,7 +27,10 @@ run `configure; delete service dns forwarding options log-queries; commit; save;
 3. Run on EdgeOS in `configure` mode: `set service dns forwarding options address=/www.involar.eu/10.1.2.3` with the IP of the server where this script is running on. Replace www.involar.eu with whatever address your eGate uses. Make sure to `commit` and `save`.
 4. Restart eGate. For me it also took a while for it to work. Probably the old IP was cached somewhere.
 
-## Issues?
+## Known issues
+- Race condition: If data is recieved before connected to mqtt, the container crashes. Mitgation for now: --restart unless-stopped
+
+## Other Issues?
 Please let me know using the github issues.
 This script should support multiple eGates, but this is untested as i only have one.
 
